@@ -30,7 +30,7 @@ elif [ "$#" -eq 1 ]; then
 elif [ "$#" -eq 2 ]; then
   RDF_FILES=("$1")
   DATASET="${2}"
-elif [ "$#" -eq 3 ] && [[ "$3" == http* ]]; then
+elif [ "$#" -eq 3 ] && [[ "$3" == http://* || "$3" == https://* ]]; then
   RDF_FILES=("$1")
   DATASET="${2}"
   FUSEKI_URL="${3}"
