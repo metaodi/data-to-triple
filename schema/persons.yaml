@@ -1,8 +1,8 @@
 id: https://example.org/persons-schema
 name: persons-schema
 description: >-
-  Schema for person data. Maps relational CSV fields to RDF properties
-  using standard vocabularies (schema.org).
+  Schema for person and country data. Maps relational CSV fields to RDF
+  properties using standard vocabularies (schema.org).
 
 prefixes:
   linkml: https://w3id.org/linkml/
@@ -26,6 +26,22 @@ classes:
         multivalued: true
         inlined_as_list: true
 
+  Country:
+    description: A country or territory.
+    class_uri: schema:Country
+    attributes:
+      id:
+        description: Unique identifier for the country (used as RDF subject URI).
+        identifier: true
+        range: uriorcurie
+      name:
+        description: Name of the country.
+        slot_uri: schema:name
+        required: true
+      code:
+        description: ISO 3166-1 alpha-3 code of the country.
+        slot_uri: schema:identifier
+
   Person:
     description: A human being.
     class_uri: schema:Person
@@ -45,3 +61,7 @@ classes:
       email:
         description: Email address of the person.
         slot_uri: schema:email
+      country:
+        description: Country of origin of the person.
+        slot_uri: schema:nationality
+        range: Country

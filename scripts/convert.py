@@ -113,6 +113,9 @@ def build_rdf_graph(
     slots = {s.name: s for s in sv.class_induced_slots(class_name)}
     id_slot = next((s for s in slots.values() if s.identifier), None)
 
+    # Pre-compute the set of class names for fast object-reference detection
+    all_classes = set(sv.all_classes().keys())
+
     # Default namespace for properties without an explicit slot_uri
     default_ns_ref = sv.schema.prefixes.get(sv.schema.default_prefix)
     default_ns = str(default_ns_ref.prefix_reference) if default_ns_ref else "https://example.org/"
@@ -147,6 +150,13 @@ def build_rdf_graph(
             prop = URIRef(prop_uri)
             raw_value = row[slot_name].strip()
             range_name = str(slot_def.range) if slot_def.range else "string"
+
+            # If the range is a class, emit a URI reference (object link)
+            if range_name in all_classes:
+                ref_uri = raw_value if raw_value.startswith("http") else id_prefix + raw_value
+                g.add((subject, prop, URIRef(ref_uri)))
+                continue
+
             xsd_type = xsd_type_for_range(range_name, sv)
 
             # Cast and add the literal (or URI for anyURI ranges)
