@@ -20,6 +20,7 @@ from convert import build_rdf_graph, expand_curie, read_csv, convert  # noqa: E4
 
 SCHEMA_FILE = Path(__file__).parent.parent / "schema" / "persons.yaml"
 DATA_FILE = Path(__file__).parent.parent / "data" / "persons.csv"
+COUNTRIES_FILE = Path(__file__).parent.parent / "data" / "countries.csv"
 ID_PREFIX = "https://example.org/"
 
 SCHEMA = Namespace("http://schema.org/")
@@ -40,6 +41,19 @@ def sample_rows():
 @pytest.fixture
 def sample_graph(sample_rows):
     return build_rdf_graph(sample_rows, SCHEMA_FILE, "Person", ID_PREFIX)
+
+
+@pytest.fixture
+def country_rows():
+    return [
+        {"id": "CH", "name": "Switzerland", "code": "CHE"},
+        {"id": "DE", "name": "Germany", "code": "DEU"},
+    ]
+
+
+@pytest.fixture
+def country_graph(country_rows):
+    return build_rdf_graph(country_rows, SCHEMA_FILE, "Country", ID_PREFIX)
 
 
 # ── Tests for expand_curie ───────────────────────────────────────────────────
@@ -78,11 +92,12 @@ def test_read_csv_returns_list_of_dicts(tmp_path):
     assert rows[0] == {"id": "X1", "name": "Alice"}
 
 
-# ── Tests for build_rdf_graph ───────────────────────────────────────────────
+# ── Tests for build_rdf_graph (persons) ────────────────────────────────────
 
 
 def test_graph_has_correct_triple_count(sample_graph):
     # 2 rows × (rdf:type + name + age + email) = 2 × 4 = 8 triples
+    # (sample_rows has no 'country' field, so that slot is skipped)
     assert len(sample_graph) == 8
 
 
@@ -141,6 +156,66 @@ def test_full_uri_id_not_double_prefixed():
     assert (URIRef("https://example.org/https://example.org/P999"), RDF.type, SCHEMA.Person) not in g
 
 
+# ── Tests for build_rdf_graph (countries) ───────────────────────────────────
+
+
+def test_country_rdf_type(country_graph):
+    assert (URIRef(f"{ID_PREFIX}CH"), RDF.type, SCHEMA.Country) in country_graph
+
+
+def test_country_name_literal(country_graph):
+    ch = URIRef(f"{ID_PREFIX}CH")
+    names = list(country_graph.objects(ch, SCHEMA.name))
+    assert len(names) == 1
+    assert str(names[0]) == "Switzerland"
+
+
+def test_country_code_literal(country_graph):
+    de = URIRef(f"{ID_PREFIX}DE")
+    codes = list(country_graph.objects(de, SCHEMA.identifier))
+    assert len(codes) == 1
+    assert str(codes[0]) == "DEU"
+
+
+def test_country_graph_triple_count(country_graph):
+    # 2 rows × (rdf:type + name + code) = 2 × 3 = 6 triples
+    assert len(country_graph) == 6
+
+
+# ── Tests for cross-entity (Person → Country) linking ───────────────────────
+
+
+def test_person_country_link_is_uri():
+    """The 'country' slot (range: Country) must be emitted as a URI, not a literal."""
+    rows = [{"id": "P001", "name": "Alice Smith", "age": "30", "email": "alice@example.com", "country": "CH"}]
+    g = build_rdf_graph(rows, SCHEMA_FILE, "Person", ID_PREFIX)
+    alice = URIRef(f"{ID_PREFIX}P001")
+    nationalities = list(g.objects(alice, SCHEMA.nationality))
+    assert len(nationalities) == 1
+    obj = nationalities[0]
+    assert isinstance(obj, URIRef), f"Expected URIRef, got {type(obj)}"
+    assert str(obj) == f"{ID_PREFIX}CH"
+
+
+def test_person_country_link_full_uri():
+    """A full-URI country value must not be double-prefixed."""
+    rows = [{"id": "P001", "name": "Alice", "age": "30", "email": "a@a.com", "country": "https://example.org/CH"}]
+    g = build_rdf_graph(rows, SCHEMA_FILE, "Person", ID_PREFIX)
+    alice = URIRef(f"{ID_PREFIX}P001")
+    nationalities = list(g.objects(alice, SCHEMA.nationality))
+    assert len(nationalities) == 1
+    assert str(nationalities[0]) == "https://example.org/CH"
+
+
+def test_person_missing_country_skipped():
+    """A missing country value must not generate a triple."""
+    rows = [{"id": "P001", "name": "Alice", "age": "30", "email": "a@a.com", "country": ""}]
+    g = build_rdf_graph(rows, SCHEMA_FILE, "Person", ID_PREFIX)
+    alice = URIRef(f"{ID_PREFIX}P001")
+    nationalities = list(g.objects(alice, SCHEMA.nationality))
+    assert nationalities == []
+
+
 # ── Tests for end-to-end convert ────────────────────────────────────────────
 
 
@@ -162,5 +237,22 @@ def test_convert_creates_output_dir(tmp_path):
 def test_convert_triple_count(tmp_path):
     out = tmp_path / "out.ttl"
     g = convert(DATA_FILE, SCHEMA_FILE, out, "Person", ID_PREFIX)
-    # data/persons.csv has 5 rows × 4 triples = 20
-    assert len(g) == 20
+    # data/persons.csv has 5 rows × (rdf:type + name + age + email + country) = 5 × 5 = 25
+    assert len(g) == 25
+
+
+def test_convert_countries_triple_count(tmp_path):
+    out = tmp_path / "countries.ttl"
+    g = convert(COUNTRIES_FILE, SCHEMA_FILE, out, "Country", ID_PREFIX)
+    # data/countries.csv has 3 rows × (rdf:type + name + code) = 3 × 3 = 9
+    assert len(g) == 9
+
+
+def test_convert_countries_writes_turtle_file(tmp_path):
+    out = tmp_path / "countries.ttl"
+    g = convert(COUNTRIES_FILE, SCHEMA_FILE, out, "Country", ID_PREFIX)
+    assert out.exists()
+    content = out.read_text()
+    assert "@prefix" in content
+    assert "schema:Country" in content or "schema1:Country" in content
+

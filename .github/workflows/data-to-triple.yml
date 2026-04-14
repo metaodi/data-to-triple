@@ -47,10 +47,16 @@ jobs:
         run: pip install pytest && python -m pytest tests/ -v
 
       - name: Convert CSV to RDF Turtle
-        run: python scripts/convert.py
+        run: |
+          python scripts/convert.py
+          python scripts/convert.py \
+            --csv data/countries.csv \
+            --schema schema/persons.yaml \
+            --output output/countries.ttl \
+            --class Country
 
       - name: Show generated triples
-        run: cat output/persons.ttl
+        run: cat output/persons.ttl && cat output/countries.ttl
 
       - name: Upload RDF artifacts
         uses: actions/upload-artifact@v4
@@ -97,17 +103,19 @@ jobs:
           DATASET: persons
           ADMIN_USER: admin
           ADMIN_PASSWORD: admin
-        run: bash scripts/upload_to_fuseki.sh output/persons.ttl
+        run: bash scripts/upload_to_fuseki.sh output/persons.ttl output/countries.ttl
 
-      - name: Run SPARQL query – list all persons
+      - name: Run SPARQL query – list all persons with their country
         run: |
           QUERY='PREFIX schema: <http://schema.org/>
-          SELECT ?person ?name ?age WHERE {
+          SELECT ?personName ?countryName WHERE {
             ?person a schema:Person ;
-                    schema:name ?name ;
-                    schema:age  ?age .
+                    schema:name ?personName ;
+                    schema:nationality ?country .
+            ?country a schema:Country ;
+                     schema:name ?countryName .
           }
-          ORDER BY ?name'
+          ORDER BY ?personName'
 
           echo "Running SPARQL query..."
           curl -sf \
@@ -119,11 +127,11 @@ jobs:
           import json, sys
           result = json.load(sys.stdin)
           bindings = result.get('results', {}).get('bindings', [])
-          print(f'Found {len(bindings)} person(s):')
+          print(f'Found {len(bindings)} person(s) with country:')
           for b in bindings:
-              name = b.get('name', {}).get('value', '(unknown)')
-              age  = b.get('age',  {}).get('value', '(unknown)')
-              print(f'  {name} (age {age})')
+              name    = b.get('personName',  {}).get('value', '(unknown)')
+              country = b.get('countryName', {}).get('value', '(unknown)')
+              print(f'  {name} → {country}')
           "
 
       - name: Verify expected triple count
@@ -136,7 +144,7 @@ jobs:
             -u admin:admin \
             | python3 -c "import json,sys; print(json.load(sys.stdin)['results']['bindings'][0]['count']['value'])")
           echo "Total triples in store: ${COUNT}"
-          if [ "${COUNT}" -ne 20 ]; then
-            echo "ERROR: expected 20 triples, got ${COUNT}" >&2
+          if [ "${COUNT}" -ne 34 ]; then
+            echo "ERROR: expected 34 triples, got ${COUNT}" >&2
             exit 1
           fi
