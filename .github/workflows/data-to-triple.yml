@@ -1,0 +1,142 @@
+name: Data to Triple
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trigger on every push/PR that touches data, schema, or scripts, and allow
+# manual runs via the "Run workflow" button in the GitHub UI.
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "data/**"
+      - "schema/**"
+      - "scripts/**"
+      - "requirements.txt"
+  pull_request:
+    paths:
+      - "data/**"
+      - "schema/**"
+      - "scripts/**"
+      - "requirements.txt"
+  workflow_dispatch:
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1 – Convert CSV → RDF (Turtle)
+  # ──────────────────────────────────────────────────────────────────────────
+  convert:
+    name: Convert CSV to RDF
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pip install pytest && python -m pytest tests/ -v
+
+      - name: Convert CSV to RDF Turtle
+        run: python scripts/convert.py
+
+      - name: Show generated triples
+        run: cat output/persons.ttl
+
+      - name: Upload RDF artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rdf-triples
+          path: output/
+          retention-days: 30
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2 – Publish to a SPARQL endpoint and run a query
+  #
+  # Starts Apache Jena Fuseki as a service container, uploads the generated
+  # Turtle file, and verifies the data is queryable via SPARQL.
+  # ──────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish to SPARQL Endpoint
+    runs-on: ubuntu-latest
+    needs: convert
+    permissions:
+      contents: read
+
+    services:
+      fuseki:
+        image: stain/jena-fuseki
+        ports:
+          - 3030:3030
+        env:
+          ADMIN_PASSWORD: admin
+          JVM_ARGS: -Xmx1g
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download RDF artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: rdf-triples
+          path: output/
+
+      - name: Upload Turtle to Fuseki
+        env:
+          FUSEKI_URL: http://localhost:3030
+          DATASET: persons
+          ADMIN_USER: admin
+          ADMIN_PASSWORD: admin
+        run: bash scripts/upload_to_fuseki.sh output/persons.ttl
+
+      - name: Run SPARQL query – list all persons
+        run: |
+          QUERY='PREFIX schema: <http://schema.org/>
+          SELECT ?person ?name ?age WHERE {
+            ?person a schema:Person ;
+                    schema:name ?name ;
+                    schema:age  ?age .
+          }
+          ORDER BY ?name'
+
+          echo "Running SPARQL query..."
+          curl -sf \
+            -G "http://localhost:3030/persons/sparql" \
+            --data-urlencode "query=${QUERY}" \
+            -H "Accept: application/sparql-results+json" \
+            -u admin:admin \
+            | python3 -c "
+          import json, sys
+          result = json.load(sys.stdin)
+          bindings = result.get('results', {}).get('bindings', [])
+          print(f'Found {len(bindings)} person(s):')
+          for b in bindings:
+              name = b.get('name', {}).get('value', '(unknown)')
+              age  = b.get('age',  {}).get('value', '(unknown)')
+              print(f'  {name} (age {age})')
+          "
+
+      - name: Verify expected triple count
+        run: |
+          QUERY='SELECT (COUNT(*) AS ?count) WHERE { ?s ?p ?o }'
+          COUNT=$(curl -sf \
+            -G "http://localhost:3030/persons/sparql" \
+            --data-urlencode "query=${QUERY}" \
+            -H "Accept: application/sparql-results+json" \
+            -u admin:admin \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['results']['bindings'][0]['count']['value'])")
+          echo "Total triples in store: ${COUNT}"
+          if [ "${COUNT}" -ne 20 ]; then
+            echo "ERROR: expected 20 triples, got ${COUNT}" >&2
+            exit 1
+          fi

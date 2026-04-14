@@ -1,0 +1,47 @@
+id: https://example.org/persons-schema
+name: persons-schema
+description: >-
+  Schema for person data. Maps relational CSV fields to RDF properties
+  using standard vocabularies (schema.org).
+
+prefixes:
+  linkml: https://w3id.org/linkml/
+  schema: http://schema.org/
+  ex: https://example.org/
+
+default_prefix: ex
+default_range: string
+
+imports:
+  - linkml:types
+
+classes:
+  PersonCollection:
+    description: A collection of persons (root container for the dataset).
+    tree_root: true
+    attributes:
+      persons:
+        description: The list of persons in this collection.
+        range: Person
+        multivalued: true
+        inlined_as_list: true
+
+  Person:
+    description: A human being.
+    class_uri: schema:Person
+    attributes:
+      id:
+        description: Unique identifier for the person (used as RDF subject URI).
+        identifier: true
+        range: uriorcurie
+      name:
+        description: Full name of the person.
+        slot_uri: schema:name
+        required: true
+      age:
+        description: Age of the person in years.
+        slot_uri: schema:age
+        range: integer
+      email:
+        description: Email address of the person.
+        slot_uri: schema:email
