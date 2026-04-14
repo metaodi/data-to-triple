@@ -1,0 +1,29 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Local development stack for the data-to-triple project.
+#
+# Starts Apache Jena Fuseki so you can query the generated RDF via SPARQL
+# in your browser at http://localhost:3030 or programmatically.
+#
+# Quick start:
+#   docker compose up -d
+#   python scripts/convert.py
+#   bash scripts/upload_to_fuseki.sh
+#   # Then open http://localhost:3030 and query the 'persons' dataset
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  fuseki:
+    image: stain/jena-fuseki
+    container_name: fuseki
+    ports:
+      - "3030:3030"
+    environment:
+      ADMIN_PASSWORD: admin
+      JVM_ARGS: -Xmx2g
+    volumes:
+      - fuseki-data:/fuseki/databases
+
+volumes:
+  fuseki-data:

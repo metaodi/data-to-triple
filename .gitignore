@@ -1,0 +1,17 @@
+# Generated RDF output (re-created by running `python scripts/convert.py`)
+output/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor config
+.DS_Store
+.idea/
+*.swp
