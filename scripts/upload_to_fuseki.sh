@@ -27,7 +27,8 @@ if [ "$#" -eq 0 ]; then
   RDF_FILES=("${RDF_FILE:-output/persons.ttl}")
 elif [ "$#" -eq 1 ]; then
   RDF_FILES=("$1")
-elif [ "$#" -eq 2 ]; then
+elif [ "$#" -eq 2 ] && [[ ! "$2" =~ \.ttl$ ]]; then
+  # Two args where second is NOT a .ttl file → treat as [RDF_FILE DATASET]
   RDF_FILES=("$1")
   DATASET="${2}"
 elif [ "$#" -eq 3 ] && [[ "$3" == http://* || "$3" == https://* ]]; then
